@@ -119,10 +119,10 @@ function render(){
   var u=me();
   if(!u){ renderLogin(); return; }
   if(ROLES[u.role].side==='front'){
-    if(['dash','tasks','courses','day90','ai'].indexOf(PAGE)<0) PAGE='dash';
+    if(['dash','tasks','courses','pay','day90','ai'].indexOf(PAGE)<0) PAGE='dash';
     renderFront(PAGE);
   }else{
-    if(['dash','approve','stores','checkin','courses','stages','users','logs'].indexOf(PAGE)<0) PAGE='dash';
+    if(['dash','approve','stores','checkin','courses','pay','stages','users','logs'].indexOf(PAGE)<0) PAGE='dash';
     renderAdmin(PAGE,ARG);
   }
   drawAllQR();

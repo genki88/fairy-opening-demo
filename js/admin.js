@@ -9,7 +9,8 @@ var ADMIN_NAV = [
   {g:'輔導作業', items:[
     {k:'stores',  t:'門店進度',    ic:'🏬'},
     {k:'checkin', t:'今日簽到',    ic:'📌'},
-    {k:'courses', t:'課程管理',    ic:'🎓'}
+    {k:'courses', t:'課程管理',    ic:'🎓'},
+    {k:'pay',     t:'費用與收款',  ic:'🧾', paybadge:true}
   ]},
   {g:'設定', items:[
     {k:'stages',  t:'階段與標準',  ic:'🧩'},
@@ -25,18 +26,21 @@ function renderAdmin(page,arg){
     page==='stores' ? (arg?admStore(arg):admStores()) :
     page==='checkin'? admCheckin(arg) :
     page==='courses'? admCourses() :
+    page==='pay'    ? admPay() :
     page==='stages' ? admStages() :
     page==='users'  ? admUsers() :
                       admLogs();
   var pend=pendingApprovals(me().role).length;
+  var payPend=receivables().nChecking;
   el('app').innerHTML =
    '<div class="shell">'+topbar([],page,true)+
      '<div class="adm">'+
        '<nav class="side">'+ADMIN_NAV.map(function(g){
          return '<div class="grp">'+g.g+'</div>'+g.items.map(function(i){
+           var n = i.badge?pend : (i.paybadge?payPend:0);
            return '<a class="'+(page===i.k?'on':'')+'" onclick="go(\''+i.k+'\')">'+
              '<span>'+i.ic+'</span><span>'+i.t+'</span>'+
-             (i.badge&&pend?'<span class="bdg">'+pend+'</span>':'')+'</a>';
+             (n?'<span class="bdg">'+n+'</span>':'')+'</a>';
          }).join('');
        }).join('')+'</nav>'+
        '<main>'+body+'</main>'+
@@ -62,6 +66,7 @@ function admDash(){
     stat('待我核准',pend.length,' 件',true)+
     stat('進度落後',late.length,' 家')+
     stat('今日應到／已到',totPre+'/'+totAtt,' 人')+
+    stat('未收款項',money(receivables().unpaid),'')+
     stat('已開幕陪跑中',opened.length,' 家')+
   '</div>'+
 
@@ -405,17 +410,26 @@ function admCheckin(courseId){
         '</div></div>'+
       '<div class="row">'+bar(r.length?Math.round(pre/r.length*100):0)+'<span class="mono small">'+pre+' / '+r.length+'</span></div>'+
       '<hr>'+
-      '<div style="overflow-x:auto"><table><thead><tr><th>學員</th><th>門店</th><th>目前階段</th><th>狀態</th><th>報到方式</th><th style="text-align:right">講師操作</th></tr></thead><tbody>'+
+      '<div style="overflow-x:auto"><table><thead><tr><th>學員</th><th>門店</th><th>目前階段</th><th>繳費</th><th>狀態</th><th>報到方式</th><th style="text-align:right">講師操作</th></tr></thead><tbody>'+
       r.map(function(a){
         var s=store(a.storeId); if(!s) return '';
+        var o=courseOrder(s.id,c.id);
+        var paid=isCoursePaid(s.id,c.id);
+        var payCell = !o?'<span class="tiny muted">免費</span>':
+          o.status==='paid'?'<span class="tag ok">已繳</span>':
+          o.status==='processing'?'<span class="tag info">確認中</span>':
+          '<span class="tag bad">未繳 '+money(o.amount)+'</span>';
         return '<tr><td><b>'+esc(s.owner)+'</b></td>'+
           '<td class="small">'+esc(s.name)+'<div class="tiny muted">'+esc(s.code)+'</div></td>'+
           '<td class="small muted">第 '+stage(s.stage).no+' '+esc(stage(s.stage).name)+'</td>'+
+          '<td>'+payCell+'</td>'+
           '<td>'+(a.status==='present'?'<span class="tag ok">已報到 '+(a.at?fmt(a.at):'')+'</span>':
                   a.status==='absent'?'<span class="tag bad">缺席</span>':'<span class="tag warn">尚未報到</span>')+'</td>'+
           '<td class="small muted">'+(a.status==='present'?(a.method==='qr'?'📱 掃碼':'✍ 講師確認'):'—')+'</td>'+
           '<td style="text-align:right"><div class="row" style="justify-content:flex-end;gap:6px">'+
-            (a.status!=='present'?'<button class="btn xs ok" onclick="checkin(\''+c.id+'\',\''+s.id+'\',\'manual\');toast(\'已標記出席\',\'ok\');render()">標記出席</button>':'')+
+            (a.status!=='present'? (paid
+              ? '<button class="btn xs ok" onclick="checkin(\''+c.id+'\',\''+s.id+'\',\'manual\');toast(\'已標記出席\',\'ok\');render()">標記出席</button>'
+              : '<button class="btn xs" disabled title="尚未繳費">未繳費</button>'):'')+
             (a.status!=='absent'?'<button class="btn xs bad" onclick="markAbsent(\''+c.id+'\',\''+s.id+'\');toast(\'已標記缺席\');render()">標記缺席</button>':'')+
           '</div></td></tr>';
       }).join('')+'</tbody></table></div>'+

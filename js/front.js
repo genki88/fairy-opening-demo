@@ -5,6 +5,7 @@ var FRONT_NAV = [
   {k:'dash',   t:'我的進度'},
   {k:'tasks',  t:'階段任務'},
   {k:'courses',t:'我的課程'},
+  {k:'pay',    t:'我的繳費'},
   {k:'day90',  t:'90 天陪跑'},
   {k:'ai',     t:'AI 助理'}
 ];
@@ -15,6 +16,7 @@ function renderFront(page){
     page==='dash'   ? frontDash(s) :
     page==='tasks'  ? frontTasks(s) :
     page==='courses'? frontCourses(s) :
+    page==='pay'    ? frontPay(s) :
     page==='day90'  ? frontDay90(s) :
                       frontAI(s);
   el('app').innerHTML =
@@ -32,10 +34,18 @@ function frontDash(s){
   var miss=missingOf(s.id);
 
   var alertHtml='';
-  if(late) alertHtml='<div class="card pad" style="border-color:var(--bad);background:var(--bad-bg);margin-bottom:16px">'+
+  var unp=unpaidOf(s.id);
+  if(unp.length){
+    var unSum=unp.reduce(function(a,o){return a+o.amount;},0);
+    alertHtml+='<div class="card pad" style="border-color:var(--warn);background:var(--warn-bg);margin-bottom:16px">'+
+      '<div class="spread wrap"><div><b style="color:var(--warn)">💳 有 '+unp.length+' 筆課程費用尚未完成繳費，合計 '+money(unSum)+'</b>'+
+      '<div class="small" style="margin-top:4px">未繳費無法報到，時數也不會計入階段門檻。</div></div>'+
+      '<button class="btn sm clay" onclick="go(\'pay\')">前往繳費</button></div></div>';
+  }
+  if(late) alertHtml+='<div class="card pad" style="border-color:var(--bad);background:var(--bad-bg);margin-bottom:16px">'+
      '<b style="color:var(--bad)">⚠ 本階段已逾期 '+Math.abs(dl.left)+' 天</b>'+
      '<div class="small" style="margin-top:4px">預計 '+fmtFull(dl.due)+' 前完成「'+esc(st.name)+'」，請優先處理下方待辦，或聯繫輔導人員調整期程。</div></div>';
-  else if(na.kind==='rejected') alertHtml='<div class="card pad" style="border-color:var(--bad);background:var(--bad-bg);margin-bottom:16px">'+
+  else if(na.kind==='rejected') alertHtml+='<div class="card pad" style="border-color:var(--bad);background:var(--bad-bg);margin-bottom:16px">'+
      '<b style="color:var(--bad)">✎ 有項目被退回，需要補件</b>'+
      '<div class="small" style="margin-top:4px">'+esc(na.why||'')+'</div></div>';
 
@@ -213,7 +223,11 @@ function frontCourses(s){
           '<div class="small muted" style="margin-top:4px">'+c.time+'　·　'+esc(c.room)+'　·　'+esc((user(c.instructor)||{}).name)+' 講師　·　'+c.hours+' 小時</div>'+
           '<div style="margin-top:12px">'+(a.status==='present'
             ? '<span class="tag ok">✓ 已於 '+fmt(a.at)+' 完成報到（'+(a.method==='qr'?'掃碼':'講師確認')+'）</span>'
-            : '<button class="btn primary" onclick="openScan(\''+c.id+'\')">📷 掃碼報到</button>')+'</div>'+
+            : (isCoursePaid(s.id,c.id)
+               ? '<button class="btn primary" onclick="openScan(\''+c.id+'\')">📷 掃碼報到</button>'
+               : '<div class="row wrap"><span class="tag warn">尚未繳費，無法報到</span>'+
+                 '<button class="btn clay sm" onclick="openPay(\''+(courseOrder(s.id,c.id)||{}).id+'\')">前往繳費 '+
+                 money((courseOrder(s.id,c.id)||{}).amount||0)+'</button></div>'))+'</div>'+
         '</div>'+
         '<div style="text-align:center"><canvas class="qr" id="qr-'+c.id+'" width="170" height="170"></canvas>'+
           '<div class="tiny muted" style="margin-top:5px">現場條碼　代碼 '+c.checkinCode+'</div></div>'+
@@ -222,12 +236,18 @@ function frontCourses(s){
 
   '<div class="card pad" style="margin-bottom:18px">'+
     '<h3 style="margin-bottom:12px">上課與出席紀錄</h3>'+
-    (rows.length?'<div style="overflow-x:auto"><table><thead><tr><th>日期</th><th>課程</th><th>時數</th><th>講師</th><th>出席</th><th>方式</th></tr></thead><tbody>'+
+    (rows.length?'<div style="overflow-x:auto"><table><thead><tr><th>日期</th><th>課程</th><th>時數</th><th>講師</th><th>繳費</th><th>出席</th><th>方式</th></tr></thead><tbody>'+
       rows.map(function(r){
         var stt = r.a.status==='present'?'<span class="tag ok">出席</span>':
                   r.a.status==='absent'?'<span class="tag bad">缺席</span>':'<span class="tag sand">已報名</span>';
+        var o=courseOrder(s.id,r.c.id);
+        var pay = !o?'<span class="tiny muted">免費</span>':
+                  o.status==='paid'?'<span class="tag ok">已繳 '+money(o.amount)+'</span>':
+                  o.status==='processing'?'<span class="tag info">確認中</span>':
+                  '<button class="btn xs clay" onclick="openPay(\''+o.id+'\')">繳費 '+money(o.amount)+'</button>';
         return '<tr><td class="mono small">'+fmtFull(r.c.date)+'</td><td><b>'+esc(r.c.name)+'</b><div class="tiny muted">'+esc(r.c.room)+'</div></td>'+
           '<td class="mono">'+r.c.hours+'</td><td class="small">'+esc((user(r.c.instructor)||{}).name||'')+'</td>'+
+          '<td>'+pay+'</td>'+
           '<td>'+stt+'</td><td class="small muted">'+(r.a.status==='present'?(r.a.method==='qr'?'掃碼報到':'講師確認'):'—')+'</td></tr>';
       }).join('')+'</tbody></table></div>':'<div class="empty"><span class="em">🎓</span>尚無課程紀錄</div>')+
   '</div>'+
@@ -247,7 +267,25 @@ function enroll(courseId){
   var u=me();
   if(DB.attendance.filter(function(a){return a.courseId===courseId&&a.storeId===u.storeId;}).length){ toast('已報名過此梯次'); return; }
   DB.attendance.push({id:'A'+Date.now(),courseId:courseId,storeId:u.storeId,userId:u.id,status:'pending',method:'',by:'',at:''});
-  log('報名課程',course(courseId).name); commit(); toast('報名成功，請於上課當天完成報到','ok'); render();
+  log('報名課程',course(courseId).name); commit();
+  var o=createCourseOrder(u.storeId,courseId);
+  closeModal();
+  if(o&&o.status!=='paid'){
+    toast('報名成功，請完成繳費才能報到','ok');
+    openPay(o.id);
+  }else{
+    toast('報名成功，請於上課當天完成報到','ok'); render();
+  }
+}
+function doScan(courseId){
+  var u=me();
+  if(!isCoursePaid(u.storeId,courseId)){
+    closeModal(); toast('尚未完成繳費，無法報到','bad');
+    var o=courseOrder(u.storeId,courseId); if(o) openPay(o.id);
+    return;
+  }
+  checkin(courseId,u.storeId,'qr'); closeModal();
+  toast('報到成功！出席紀錄已送交講師確認','ok'); render();
 }
 function openScan(courseId){
   var c=course(courseId);
@@ -261,10 +299,6 @@ function openScan(courseId){
     '</div>',
     '<button class="btn" onclick="closeModal()">取消</button>'+
     '<button class="btn primary" onclick="doScan(\''+courseId+'\')">模擬掃描成功</button>');
-}
-function doScan(courseId){
-  var u=me(); checkin(courseId,u.storeId,'qr'); closeModal();
-  toast('報到成功！出席紀錄已送交講師確認','ok'); render();
 }
 
 /* ---------- 90 天陪跑 ---------- */
